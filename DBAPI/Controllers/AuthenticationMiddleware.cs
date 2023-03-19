@@ -13,6 +13,11 @@ public class AuthenticationMiddleware
 
     public async Task Invoke(HttpContext context)
     {
+        if (context.Request.Path == "/")
+        {
+            await _next.Invoke(context);
+            return;
+        }
         string token = context.Request.Headers["token"];
         if (token != null && !string.IsNullOrEmpty(token))
         {

@@ -12,7 +12,9 @@ public static class ModuleLoader
 
     public static void LoadModules()
     {
-        foreach (var dependency in Directory.GetFiles(Path.Combine(ConfigManager.APIConfig.ModulePath, "dependencies"), "*.dll"))
+        var dependencyPath = Path.Combine(ConfigManager.APIConfig.ModulePath, "dependencies");
+        Directory.CreateDirectory(dependencyPath);
+        foreach (var dependency in Directory.GetFiles(dependencyPath, "*.dll"))
         {
             try
             {
@@ -28,6 +30,7 @@ public static class ModuleLoader
         Dependencies = _dependencies.ToArray();
         ConsoleUtils.WriteLine("Loaded " + Dependencies.Length + " dependencies", ConsoleColor.Green);
 
+        Directory.CreateDirectory(ConfigManager.APIConfig.ModulePath);
         foreach (var module in Directory.GetFiles(ConfigManager.APIConfig.ModulePath, "*.dll"))
         {
             try
