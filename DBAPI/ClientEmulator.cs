@@ -4,10 +4,11 @@ using System.Text;
 
 public class ClientEmulator
 {
-    private static HttpClient _client = new HttpClient(new HttpClientHandler()
+    private static HttpClient _client = new (new HttpClientHandler()
     {
         ServerCertificateCustomValidationCallback = (message, cert, chain, errors) => { return true; }
     });
+    private static HttpClient _externClient = new ();
     private const string AppUrl = "http://localhost:80";
     static ClientEmulator()
     {
@@ -21,7 +22,7 @@ public class ClientEmulator
 
     public static async Task<HttpResponseMessage> GetAsyncExtern(string url)
     {
-        return await _client.GetAsync(url);
+        return await _externClient.GetAsync(url);
     }
 
     public static async Task<HttpResponseMessage> PostAsync(string url, string jsonContent)

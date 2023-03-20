@@ -3,11 +3,20 @@
 using System.Security.Cryptography.X509Certificates;
 using Certes;
 using Certes.Acme;
+using Org.BouncyCastle.Asn1.X509;
+using Org.BouncyCastle.Crypto.Generators;
+using Org.BouncyCastle.Crypto.Operators;
+using Org.BouncyCastle.Crypto.Parameters;
+using Org.BouncyCastle.Math;
+using Org.BouncyCastle.Pkcs;
+using Org.BouncyCastle.Security;
+using Org.BouncyCastle.X509;
 
 public class CertificateManager
 {
     public string Path { get; }
     public string? Password { get; private set; }
+    public bool IsSelfSigned { get; private set; }
 
     public bool Exists => File.Exists(Path);
     public bool TryGetCertificate(out X509Certificate2? certificate)
@@ -17,7 +26,12 @@ public class CertificateManager
             try
             {
                 certificate = new X509Certificate2(Path, Password);
-                if(!certificate.Verify())
+                IsSelfSigned = certificate.Issuer == certificate.Subject;
+                if (IsSelfSigned)
+                {
+                    ConsoleUtils.WriteLine("Using self signed certificate.", ConsoleColor.Gray);
+                }
+                else if (!certificate.Verify())
                     throw new Exception("Certificate is not valid.");
                 return true;
             }
@@ -33,6 +47,41 @@ public class CertificateManager
             certificate = null;
             return false;
         }
+    }
+
+    public bool TryCreateSelfSigned(string ip)
+    {
+        try
+        {
+            var secureRandom = new SecureRandom();
+            var generator = new X509V3CertificateGenerator();
+            var keyPairGenerator = new RsaKeyPairGenerator();
+            keyPairGenerator.Init(new RsaKeyGenerationParameters(BigInteger.ValueOf(0x10001), secureRandom, 1024, 100));
+            var keyPair = keyPairGenerator.GenerateKeyPair();
+            var dn = new X509Name($"CN={ip}");
+
+            generator.SetSerialNumber(BigInteger.ValueOf(DateTime.UtcNow.Ticks));
+            generator.SetSubjectDN(dn);
+            generator.SetIssuerDN(dn);
+            generator.SetNotBefore(DateTime.Today.Subtract(TimeSpan.FromDays(1)));
+            generator.SetNotAfter(DateTime.Today.AddYears(2));
+            generator.SetPublicKey(keyPair.Public);
+
+            var cert = generator.Generate(new Asn1SignatureFactory("SHA256WithRSAEncryption", keyPair.Private));
+            using var stream = new FileStream(Path, FileMode.OpenOrCreate, FileAccess.Write);
+            Pkcs12Store p12 = new Pkcs12Store();
+            p12.SetKeyEntry(ip, new AsymmetricKeyEntry(keyPair.Private), new X509CertificateEntry[] { new (cert) });
+            Password ??= "";
+            p12.Save(stream, Password.ToCharArray(), secureRandom);
+            stream.Dispose();
+        }
+        catch (Exception e)
+        {
+            ConsoleUtils.WriteLine("There was a problem with generating your certificate: " + e, ConsoleColor.Red);
+            return false;
+        }
+
+        return true;
     }
 
     public bool TryRequestCertificate(Action<string, string > runApp)
@@ -60,7 +109,11 @@ public class CertificateManager
                 ConsoleUtils.WriteLine("Could not create your account.", ConsoleColor.Red);
                 return false;
             }
-            var domain = ConsoleUtils.ReadLine("Enter the domain that is pointing to this machine:", ConsoleColor.Cyan)?.ToLower();
+
+            var domain = ConsoleUtils.ReadLine("Enter the domain that is pointing to this machine:", ConsoleColor.Cyan)?
+                .ToLower()
+                .Replace("https://", "")
+                .Replace("http://", "");
             if (string.IsNullOrWhiteSpace(domain))
             {
                 ConsoleUtils.WriteLine("You must enter a domain.", ConsoleColor.Red);
@@ -71,7 +124,7 @@ public class CertificateManager
             var httpChallenge = authz.Http().GetAwaiter().GetResult();
             var keyAuth = httpChallenge.KeyAuthz;
             Task.Run(() => runApp("/.well-known/acme-challenge/"+httpChallenge.Token, keyAuth));
-            var connTest = ClientEmulator.GetAsyncExtern(domain + "/.well-known/acme-challenge/" + httpChallenge.Token)
+            var connTest = ClientEmulator.GetAsyncExtern("http://" + domain + "/.well-known/acme-challenge/" + httpChallenge.Token)
                 .GetAwaiter().GetResult();
             if (!connTest.IsSuccessStatusCode)
             {
@@ -98,13 +151,13 @@ public class CertificateManager
                 }, privateKey).GetAwaiter().GetResult();
             var certChain = order.Download().GetAwaiter().GetResult();
             var pfxBuilder = certChain.ToPfx(privateKey);
-            var pfx = pfxBuilder.Build(domain+"-crt", "123");
-            Password = "123";
+            Password ??= "";
+            var pfx = pfxBuilder.Build(domain+"-crt", Password);
             File.WriteAllBytes(Path, pfx);
         }
         catch(Exception e)
         {
-            ConsoleUtils.WriteLine("There was an error creating your account: " + e, ConsoleColor.Red);
+            ConsoleUtils.WriteLine("There was an requesting your certificate: " + e, ConsoleColor.Red);
             return false;
         }
 
@@ -116,4 +169,10 @@ public class CertificateManager
         Path = path;
         Password = password;
     }
+}
+
+public static class CurrentCertificateInfo
+{
+    public static CertificateManager? Manager { get; set; }
+    public static X509Certificate2? Certificate { get; set; }
 }

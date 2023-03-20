@@ -29,23 +29,61 @@ if (!certManager.Exists)
     var gen = ConsoleUtils.GetUserConfirmation("No valid certificate, do you want to request one? [Y/N]", ConsoleColor.Yellow, false);
     if (gen)
     {
-        var cancellationToken = new CancellationTokenSource();
-        Request:
-        if (certManager.TryRequestCertificate((key, value) => Run(true, true, 
-                application => application.MapGet(key, () => value), cancellationToken.Token)))
+        var selfSigned = !ConsoleUtils.GetUserConfirmation("Will there be a domain pointing to this server? [Y/N]", ConsoleColor.Yellow, false);
+        if (selfSigned)
         {
-            ConfigManager.APIConfig.CertificatePath = certManager.Path;
-            ConfigManager.APIConfig.CertificatePassword = certManager.Password;
-            ConfigManager.APIConfig.Save();
-            ConsoleUtils.WriteLine("Certificate request successful.", ConsoleColor.Green);
-            cancellationToken.Cancel();
+            Sign:
+            string ip = "";
+            try
+            {
+                var response = ClientEmulator.GetAsyncExtern("https://ifconfig.me/ip").GetAwaiter().GetResult();
+                response.EnsureSuccessStatusCode();
+                ip = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+            }
+            catch (Exception e)
+            {
+                ConsoleUtils.WriteLine("Could not get external IP: " + e, ConsoleColor.Red);
+                var manual = ConsoleUtils.ReadLine("Enter the ip address pointing to this machine:", ConsoleColor.Yellow);
+                if (string.IsNullOrWhiteSpace(manual) || !IPAddress.TryParse(manual, out var parsedAddress))
+                {
+                    ConsoleUtils.WriteLine("Invalid IP.", ConsoleColor.Red);
+                    certManager = null;
+                }
+                else
+                {
+                    ip = parsedAddress.ToString();
+                }
+            }
+
+            if (certManager?.TryCreateSelfSigned(ip) ?? false)
+            {
+                ConsoleUtils.WriteLine("Created self-signed certificate.", ConsoleColor.Green);
+            }
+            else
+            {
+                ConsoleUtils.WriteLine("Generating self-signed certificate failed.", ConsoleColor.Red);
+                if (ConsoleUtils.GetUserConfirmation("Retry? [Y/N]", ConsoleColor.Yellow, false))
+                    goto Sign;
+                certManager = null;
+            }
         }
         else
         {
-            ConsoleUtils.WriteLine("Certificate request failed.", ConsoleColor.Red);
-            if (ConsoleUtils.GetUserConfirmation("Retry? [Y/N]", ConsoleColor.Yellow, false))
-                goto Request;
-            certManager = null;
+            var cancellationToken = new CancellationTokenSource();
+            Request:
+            if (certManager.TryRequestCertificate((key, value) => Run(true, true,
+                    application => application.MapGet(key, () => value), cancellationToken.Token)))
+            {
+                ConsoleUtils.WriteLine("Certificate request successful.", ConsoleColor.Green);
+                cancellationToken.Cancel();
+            }
+            else
+            {
+                ConsoleUtils.WriteLine("Certificate request failed.", ConsoleColor.Red);
+                if (ConsoleUtils.GetUserConfirmation("Retry? [Y/N]", ConsoleColor.Yellow, false))
+                    goto Request;
+                certManager = null;
+            }
         }
     }
     else
@@ -59,9 +97,11 @@ if (!certManager.Exists)
     }
 }
 
-if (certManager != null && certManager.TryGetCertificate(out cert!))
+if (certManager?.TryGetCertificate(out cert!) ?? false)
 {
     ConsoleUtils.WriteLine("Loaded certificate: "+cert.FriendlyName, ConsoleColor.Green);
+    CurrentCertificateInfo.Manager = certManager;
+    CurrentCertificateInfo.Certificate = cert;
     httpsValid = true;
 }
 
@@ -99,7 +139,7 @@ ConsoleUtils.WriteLine("Starting webserver...", ConsoleColor.Blue);
 Run();
 void Run(bool silent = false, bool disableMappings = false, Action<WebApplication>? configure = null, CancellationToken cancellationToken = default)
 {
-    bool https =  httpsValid && ConfigManager.APIConfig.PortHTTPS != 0;
+    bool https = httpsValid && ConfigManager.APIConfig.PortHTTPS != 0;
     var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.

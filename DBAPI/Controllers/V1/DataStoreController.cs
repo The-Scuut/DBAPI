@@ -34,7 +34,7 @@ public class DataStoreController : ControllerBase
 
         return Ok();
     }
-    
+
     [HttpPost("[controller]/ensureexist/{name}")]
     public async Task<IActionResult> EnsureExist(string name, [FromBody]object types)
     {
@@ -55,7 +55,7 @@ public class DataStoreController : ControllerBase
 
         return Ok();
     }
-    
+
     [HttpPost("[controller]/delete/{name}")]
     public async Task<IActionResult> Delete(string name)
     {
@@ -73,7 +73,7 @@ public class DataStoreController : ControllerBase
 
         return Ok();
     }
-    
+
     [HttpPost("[controller]/insert")]
     public async Task<IActionResult> Insert([FromBody]object data)
     {
