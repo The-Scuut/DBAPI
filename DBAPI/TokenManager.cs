@@ -108,9 +108,10 @@ public static class TokenManager
             Created = DateTime.ParseExact(queryResult[4], "dd/MM/yyyy HH:mm:ss", CultureInfo.InvariantCulture)
         };
 
-    public static async Task<bool> IsValid(string token) =>
-        SessionToken.ToString() == token ||
-        (Guid.TryParse(token, out var parsedGuid) &&
-         await DBHandler.ExecuteQuerySingle("SELECT * FROM tokens WHERE token = @token",
-             collection => { collection.AddWithValue("token", parsedGuid.ToString("N")); }, true) != null);
+    public static async Task<bool> IsValid(string token) => 
+        token.TrimEnd('\0') == SessionToken.ToString() ||
+               (Guid.TryParse(token, out var parsedGuid) &&
+                await DBHandler.ExecuteQuerySingle("SELECT * FROM tokens WHERE token = @token",
+                    collection => { collection.AddWithValue("token", parsedGuid.ToString("N")); }, true) != null);
+    
 }

@@ -1,5 +1,6 @@
 ﻿namespace DBAPI;
 
+using System.Globalization;
 using DBAPI.Models;
 
 public static class ConsoleUtils
@@ -271,6 +272,40 @@ public static class ConsoleUtils
                 {
                     WriteLine("Unknown shortcut: " + args.ElementAt(0), ConsoleColor.Red);
                 }
+                break;
+            case "backup":
+                string file = args.Length > 0 ? args.ElementAt(0) : $"backup_{DateTime.Now.ToShortDateString().Replace("/", "-")}_{DateTime.Now.ToShortTimeString().Replace(":", "'")}.db" ?? "";
+                try
+                {
+                    if (!Directory.Exists("backups"))
+                        Directory.CreateDirectory("backups");
+                    Backup.BackupDatabase(Path.Combine("backups", file));
+                }
+                catch (Exception e)
+                {
+                    WriteLine("Could not do backup: " + e.Message, ConsoleColor.Red);
+                    break;
+                }
+                WriteLine($"Saved to: {file}.", ConsoleColor.Green);
+                break;
+            case "restore":
+                string fileRestore = args.Length > 0 ? string.Join(" ", args) : ReadLine("File name: ", ConsoleColor.Cyan) ?? "";
+                try
+                {
+                    string fileToRestore = Path.Combine("backups", fileRestore);
+                    if (!File.Exists(fileToRestore))
+                    {
+                        WriteLine("File does not exist: "+fileToRestore, ConsoleColor.Red);
+                        break;
+                    }
+                    Backup.RestoreDatabase(fileToRestore);
+                }
+                catch (Exception e)
+                {
+                    WriteLine("Could not do restore: " + e.Message, ConsoleColor.Red);
+                    break;
+                }
+                WriteLine($"Restored from: {fileRestore}.", ConsoleColor.Green);
                 break;
             case "exit":
             case "quit":

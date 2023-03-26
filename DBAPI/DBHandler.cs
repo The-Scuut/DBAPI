@@ -16,7 +16,7 @@ public static class DBHandler
         var result = await command.ExecuteScalarAsync();
         return result;
     }
-    
+
     public static async IAsyncEnumerable<object> ExecuteQuery(string query, Action<MySqlParameterCollection>? paramsconconfig = null, bool internalDb = false)
     {
         await using MySqlConnection connection = new(ConfigManager.DBConfig.GetConnectionString(internalDb));
@@ -31,6 +31,25 @@ public static class DBHandler
         {
             for (int i = 0; i < reader.FieldCount; i++)
                 yield return reader.GetValue(i);
+        }
+    }
+
+    public static async IAsyncEnumerable<object[]> ExecuteQueryMultirow(string query, Action<MySqlParameterCollection>? paramsconconfig = null, bool internalDb = false)
+    {
+        await using MySqlConnection connection = new(ConfigManager.DBConfig.GetConnectionString(internalDb));
+        await connection.OpenAsync();
+        await using MySqlCommand command = new(query, connection);
+        if (paramsconconfig != null)
+        {
+            paramsconconfig(command.Parameters);
+        }
+        await using MySqlDataReader reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            object[] row = new object[reader.FieldCount];
+            for (int i = 0; i < reader.FieldCount; i++)
+                row[i] = reader.GetValue(i);
+            yield return row;
         }
     }
 

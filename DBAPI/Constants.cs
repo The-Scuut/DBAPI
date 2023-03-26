@@ -8,6 +8,7 @@ public class Constants
 
     public static readonly Dictionary<string, string> Shortcuts = new Dictionary<string, string>()
     {
-        ["ctable"] = "post v1 datastore/create/testname {\"types\" : \"exampleValue int\"}",
+        ["ctable"] = "post v1 datastore/table/create/testname {\"types\" : \"exampleValue int\"}",
+        ["selectall"] = "fetch v1 datastore/selectall/testname",
     };
 }

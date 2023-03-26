@@ -2,6 +2,12 @@
 Microsoft Visual Studio Solution File, Format Version 12.00
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DBAPI", "DBAPI\DBAPI.csproj", "{762EEB5E-FA54-454E-BB04-92D14C4B389D}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DBAPI.Library", "DBAPI.Library\DBAPI.Library.csproj", "{F977DAAC-C07A-47E8-9D56-557B1550CC65}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DBAPI.Library.Example", "DBAPI.Library.Example\DBAPI.Library.Example.csproj", "{66CA3414-892C-4B1B-B372-07D44A489BB7}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MySqlBackup(MySqlConnector)", "MySqlBackup\MySqlBackup(MySqlConnector).csproj", "{9EC3C360-2DA9-48A7-9D00-38E0B30684F3}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -12,5 +18,17 @@ Global
 		{762EEB5E-FA54-454E-BB04-92D14C4B389D}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{762EEB5E-FA54-454E-BB04-92D14C4B389D}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{762EEB5E-FA54-454E-BB04-92D14C4B389D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F977DAAC-C07A-47E8-9D56-557B1550CC65}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F977DAAC-C07A-47E8-9D56-557B1550CC65}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F977DAAC-C07A-47E8-9D56-557B1550CC65}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F977DAAC-C07A-47E8-9D56-557B1550CC65}.Release|Any CPU.Build.0 = Release|Any CPU
+		{66CA3414-892C-4B1B-B372-07D44A489BB7}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{66CA3414-892C-4B1B-B372-07D44A489BB7}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{66CA3414-892C-4B1B-B372-07D44A489BB7}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{66CA3414-892C-4B1B-B372-07D44A489BB7}.Release|Any CPU.Build.0 = Release|Any CPU
+		{9EC3C360-2DA9-48A7-9D00-38E0B30684F3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9EC3C360-2DA9-48A7-9D00-38E0B30684F3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9EC3C360-2DA9-48A7-9D00-38E0B30684F3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9EC3C360-2DA9-48A7-9D00-38E0B30684F3}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

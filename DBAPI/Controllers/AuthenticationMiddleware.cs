@@ -21,17 +21,19 @@ public class AuthenticationMiddleware
         string token = context.Request.Headers["token"];
         if (token != null && !string.IsNullOrEmpty(token))
         {
+            var tokenLength = token.Length;
+            var tokenString = token;
             bool IsValidBase64(out string decrypted)
             {
-                Span<byte> buffer = new Span<byte>(new byte[token.Length]);
+                Span<byte> buffer = new Span<byte>(new byte[tokenLength]);
                 decrypted = string.Empty;
-                if (!Convert.TryFromBase64String(token, buffer, out _))
+                if (!Convert.TryFromBase64String(tokenString, buffer, out _))
                     return false; 
                 decrypted = Encoding.UTF8.GetString(buffer);
                 return true;
             }
 
-            if (IsValidBase64(out token) && await TokenManager.IsValid(token))
+            if (IsValidBase64(out token) && !string.IsNullOrWhiteSpace(token) && await TokenManager.IsValid(token))
             {
                 await _next.Invoke(context);
             }
