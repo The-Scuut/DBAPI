@@ -6,7 +6,7 @@ public static class ClientEmulator
 {
     private static HttpClient _client = new (new HttpClientHandler()
     {
-        ServerCertificateCustomValidationCallback = (message, cert, chain, errors) => { return true; }
+        ServerCertificateCustomValidationCallback = (_, _, _, _) => true
     });
     private static HttpClient _externClient = new ();
     private const string AppUrl = "http://localhost:80/";

@@ -1,5 +1,6 @@
 ﻿namespace DBAPI.Controllers;
 
+using System.Net;
 using System.Text;
 
 public class AuthenticationMiddleware
@@ -14,6 +15,12 @@ public class AuthenticationMiddleware
     public async Task Invoke(HttpContext context)
     {
         if (context.Request.Path == "/")
+        {
+            await _next.Invoke(context);
+            return;
+        }
+
+        if (!ConfigManager.APIConfig.RequireTokenForLocalhost && Equals(context.Connection.LocalIpAddress, IPAddress.Loopback))
         {
             await _next.Invoke(context);
             return;

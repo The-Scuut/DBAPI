@@ -14,7 +14,7 @@ public class InstanceController : ControllerBase
         _logger = logger;
     }
 
-    [HttpPost("[controller]/getinfo")]
+    [HttpGet("[controller]/getinfo")]
     public async Task<IActionResult> GetInfo()
     {
         return Content(JsonConvert.SerializeObject(new

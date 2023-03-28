@@ -32,8 +32,16 @@ if (!certManager.Exists)
         var selfSigned = !ConsoleUtils.GetUserConfirmation("Will there be a domain pointing to this server? [Y/N]", ConsoleColor.Yellow, false);
         if (selfSigned)
         {
-            Sign:
             string ip = "";
+#if DEBUG
+            if (ConsoleUtils.GetUserConfirmation("Use localhost? [Y/N]", ConsoleColor.Yellow, true))
+            {
+                ip = "localhost";
+                goto SkipIpCheck;
+            }
+#endif
+            Sign:
+            ip = "";
             try
             {
                 var response = ClientEmulator.GetAsyncExtern("https://ifconfig.me/ip").GetAwaiter().GetResult();
@@ -55,6 +63,7 @@ if (!certManager.Exists)
                 }
             }
 
+            SkipIpCheck:
             if (certManager?.TryCreateSelfSigned(ip) ?? false)
             {
                 ConsoleUtils.WriteLine("Created self-signed certificate.", ConsoleColor.Green);

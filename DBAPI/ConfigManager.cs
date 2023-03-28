@@ -14,7 +14,8 @@ public static class ConfigManager
         bool isDefault = false;
         if (!File.Exists(DBConfigPath))
         {
-            File.WriteAllText(DBConfigPath, JsonConvert.SerializeObject(new DatabaseConfig(), Formatting.Indented));
+            DBConfig = new DatabaseConfig();
+            File.WriteAllText(DBConfigPath, JsonConvert.SerializeObject(DBConfig, Formatting.Indented));
             isDefault = true;
         }
         else
@@ -45,7 +46,8 @@ public static class ConfigManager
 
         if (!File.Exists(APIConfigPath))
         {
-            File.WriteAllText(APIConfigPath, JsonConvert.SerializeObject(new APIConfig(), Formatting.Indented));
+            APIConfig = new APIConfig();
+            File.WriteAllText(APIConfigPath, JsonConvert.SerializeObject(APIConfig, Formatting.Indented));
         }
         else
         {
