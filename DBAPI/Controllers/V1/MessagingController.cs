@@ -9,6 +9,7 @@ public class MessagingController : ControllerBase
 {
     private readonly ILogger<MessagingController> _logger;
     public static readonly Dictionary<string, string[]> Messages = new();
+    public static readonly Dictionary<string, long> PingTimes = new();
 
     public MessagingController(ILogger<MessagingController> logger)
     {
@@ -69,6 +70,48 @@ public class MessagingController : ControllerBase
         if (!Messages.ContainsKey(channel))
             return BadRequest("Channel does not exist");
         Messages.Remove(channel);
+        return Ok();
+    }
+
+    [HttpGet("[controller]/servers/ping/{server}")]
+    public async Task<IActionResult> Ping(string server)
+    {
+        if (string.IsNullOrWhiteSpace(server))
+            return BadRequest("Server may not be null or empty");
+        if (!PingTimes.ContainsKey(server))
+        {
+            if (PingTimes.Keys.Count >= 100)
+                return BadRequest("Too many servers (max 50)");
+        }
+
+        PingTimes[server] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        return Ok();
+    }
+
+    [HttpGet("[controller]/servers/list")]
+    public async Task<IActionResult> PingList()
+    {
+        return Content(JsonConvert.SerializeObject(PingTimes.Keys.ToArray()));
+    }
+
+    [HttpGet("[controller]/servers/status/{server}")]
+    public async Task<IActionResult> PingStatus(string server)
+    {
+        if (string.IsNullOrWhiteSpace(server))
+            return BadRequest("Server may not be null or empty");
+        if (!PingTimes.ContainsKey(server))
+            return BadRequest("Server does not exist");
+        return Content(PingTimes[server].ToString());
+    }
+
+    [HttpGet("[controller]/servers/clear/{server}")]
+    public async Task<IActionResult> PingClear(string server)
+    {
+        if (string.IsNullOrWhiteSpace(server))
+            return BadRequest("Server may not be null or empty");
+        if (!PingTimes.ContainsKey(server))
+            return BadRequest("Server does not exist");
+        PingTimes.Remove(server);
         return Ok();
     }
 }

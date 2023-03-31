@@ -44,11 +44,11 @@
             AddToken(getInfoClient);
             try
             {
-                var serverInfo = getInfoClient.GetAsync(Host+"/Application/V1/Instance/getinfo").GetAwaiter().GetResult();
+                var serverInfo = getInfoClient.GetAsync(Host+"/Application/V1/instance/getinfo").GetAwaiter().GetResult();
+                var content = serverInfo.Content.ReadAsStringAsync().GetAwaiter().GetResult();
                 if (!serverInfo.IsSuccessStatusCode)
-                    throw new HttpRequestException("Connection unsuccessful, server returned " + serverInfo.StatusCode + " " +  serverInfo.Content.ReadAsStringAsync().GetAwaiter().GetResult());
-                var stringInfo = serverInfo.Content.ReadAsStringAsync().GetAwaiter().GetResult();
-                stringInfo = stringInfo.TrimStart('{').TrimEnd('}');
+                    throw new HttpRequestException("Connection unsuccessful, server returned " + serverInfo.StatusCode + " " +  content);
+                var stringInfo = content.TrimStart('{').TrimEnd('}');
                 var split = stringInfo.Split(',');
                 bool selfSigned = false;
                 foreach (var value in split)
@@ -133,16 +133,16 @@
             while (!token.IsCancellationRequested)
             {
                 await Task.Delay(TimeSpan.FromSeconds(interval), token);
-                var response = await _client.GetAsync(Host + $"/Application/V1/Messaging/read/{channel}", token);
+                var response = await _client.GetAsync(Host + $"/Application/V1/messaging/read/{channel}", token);
+                var content = await response.Content.ReadAsStringAsync();
                 if (!response.IsSuccessStatusCode)
                 {
                     failedAttempts++;
                     if (failedAttempts > 5)
-                        throw new HttpRequestException("Connection exceeded 5 failed attempts, last status code: " + response.StatusCode + " " +  response.Content.ReadAsStringAsync().GetAwaiter().GetResult());
+                        throw new HttpRequestException("Connection exceeded 5 failed attempts, last status code: " + response.StatusCode + " " +  content);
                     continue;
                 }
                 failedAttempts = 0;
-                var content = await response.Content.ReadAsStringAsync();
                 if (string.IsNullOrWhiteSpace(content) || content == "null" || content == "[]")
                     continue;
                 content = content.TrimStart('[').TrimEnd(']');
@@ -162,7 +162,7 @@
             if (message == null)
                 throw new ArgumentException("Message cannot be null", nameof(message));
             var converter = ObjectConverter.GetTypeConverter<T>();
-            var response = _client.PostAsync(Host + $"/Application/V1/Messaging/send/{channel}", new StringContent(converter.SerializeForMessage(new []{message}), Encoding.UTF8, "application/json")).GetAwaiter().GetResult();
+            var response = _client.PostAsync(Host + $"/Application/V1/messaging/send/{channel}", new StringContent(converter.SerializeForMessage(new []{message}), Encoding.UTF8, "application/json")).GetAwaiter().GetResult();
             if (!response.IsSuccessStatusCode)
                 throw new HttpRequestException("Could not send message, server returned " + response.StatusCode + " " +  response.Content.ReadAsStringAsync().GetAwaiter().GetResult());
         }
@@ -176,7 +176,7 @@
             if (messages == null)
                 throw new ArgumentException("Messages cannot be null", nameof(messages));
             var converter = ObjectConverter.GetTypeConverter<T>();
-            var response = _client.PostAsync(Host + $"/Application/V1/Messaging/send/{channel}", new StringContent(converter.SerializeForMessage(messages), Encoding.UTF8, "application/json")).GetAwaiter().GetResult();
+            var response = _client.PostAsync(Host + $"/Application/V1/messaging/send/{channel}", new StringContent(converter.SerializeForMessage(messages), Encoding.UTF8, "application/json")).GetAwaiter().GetResult();
             if (!response.IsSuccessStatusCode)
                 throw new HttpRequestException("Could not send messages, server returned " + response.StatusCode + " " +  response.Content.ReadAsStringAsync().GetAwaiter().GetResult());
         }
@@ -188,15 +188,44 @@
             if (channel.Contains(" "))
                 throw new ArgumentException("Channel cannot contain spaces", nameof(channel));
             string path = peek ? "peek" : "read";
-            var response = _client.GetAsync(Host + $"/Application/V1/Messaging/{path}/{channel}").GetAwaiter().GetResult();
-            if (!response.IsSuccessStatusCode)
-                throw new HttpRequestException("Could not peek messages, server returned " + response.StatusCode + " " +  response.Content.ReadAsStringAsync().GetAwaiter().GetResult());
+            var response = _client.GetAsync(Host + $"/Application/V1/messaging/{path}/{channel}").GetAwaiter().GetResult();
             var content = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+            if (!response.IsSuccessStatusCode)
+                throw new HttpRequestException("Could not peek messages, server returned " + response.StatusCode + " " +  content);
 
             if (string.IsNullOrWhiteSpace(content) || content == "null" || content == "[]")
                 return Array.Empty<T>();
             var converter = ObjectConverter.GetTypeConverter<T>();
             return converter.DeserializeEnumerableMessage(content).ToArray();
+        }
+
+        public void ClearMessages(string channel)
+        {
+            if (string.IsNullOrWhiteSpace(channel))
+                throw new ArgumentException("Channel cannot be null or empty", nameof(channel));
+            if (channel.Contains(" "))
+                throw new ArgumentException("Channel cannot contain spaces", nameof(channel));
+            var response = _client.DeleteAsync(Host + $"/Application/V1/messaging/clear/{channel}").GetAwaiter().GetResult();
+            if (!response.IsSuccessStatusCode)
+                throw new HttpRequestException("Could not clear messages, server returned " + response.StatusCode + " " +  response.Content.ReadAsStringAsync().GetAwaiter().GetResult());
+        }
+
+        public string[] GetChannels()
+        {
+            var response = _client.GetAsync(Host + $"/Application/V1/messaging/list").GetAwaiter().GetResult();
+            var content = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+            if (!response.IsSuccessStatusCode)
+                throw new HttpRequestException("Could not get channels, server returned " + response.StatusCode + " " +  content);
+            return content.TrimStart('[').TrimEnd(']').Replace("\"", "").Split(',');
+        }
+
+        public string[] GetTables()
+        {
+            var response = _client.GetAsync(Host + $"/Application/V1/datastore/table/show").GetAwaiter().GetResult();
+            var content = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+            if (!response.IsSuccessStatusCode)
+                throw new HttpRequestException("Could not get tables, server returned " + response.StatusCode + " " +  content);
+            return content.TrimStart('[').TrimEnd(']').Replace("\"", "").Split(',');
         }
 
         public T[] GetCollection<T>(string tableName) where T : class
@@ -364,6 +393,51 @@
                     values[i] += $"{property.Name}={value}";
             }
             return $"{string.Join(" AND ", values)}";
+        }
+
+        public void Ping(string server)
+        {
+            if (string.IsNullOrWhiteSpace(server))
+                throw new ArgumentException("Server cannot be null or empty", nameof(server));
+            if (server.Contains(" "))
+                throw new ArgumentException("Server cannot contain spaces", nameof(server));
+            var response = _client.GetAsync(Host + $"/Application/V1/messaging/servers/ping/{server}").GetAwaiter().GetResult();
+            if (!response.IsSuccessStatusCode)
+                throw new HttpRequestException("Could not ping server, server returned " + response.StatusCode + " " +  response.Content.ReadAsStringAsync().GetAwaiter().GetResult());
+        }
+
+        public DateTime GetServerStatus(string server)
+        {
+            if (string.IsNullOrWhiteSpace(server))
+                throw new ArgumentException("Server cannot be null or empty", nameof(server));
+            if (server.Contains(" "))
+                throw new ArgumentException("Server cannot contain spaces", nameof(server));
+            var response = _client.GetAsync(Host + $"/Application/V1/messaging/servers/status/{server}").GetAwaiter().GetResult();
+            var content = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+            if (!response.IsSuccessStatusCode)
+                throw new HttpRequestException("Could not get server time, server returned " + response.StatusCode + " " +  content);
+            var unixTimeMilliseconds = long.Parse(content);
+            return DateTimeOffset.FromUnixTimeMilliseconds(unixTimeMilliseconds).UtcDateTime;
+        }
+
+        public string[] GetServers()
+        {
+            var response = _client.GetAsync(Host + $"/Application/V1/messaging/servers/list").GetAwaiter().GetResult();
+            var content = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+            if (!response.IsSuccessStatusCode)
+                throw new HttpRequestException("Could not get servers, server returned " + response.StatusCode + " " +  content);
+            return content.TrimStart('[').TrimEnd(']').Replace("\"", "").Split(',');
+        }
+
+        public void ClearServer(string server)
+        {
+            if (string.IsNullOrWhiteSpace(server))
+                throw new ArgumentException("Server cannot be null or empty", nameof(server));
+            if (server.Contains(" "))
+                throw new ArgumentException("Server cannot contain spaces", nameof(server));
+            var response = _client.GetAsync(Host + $"/Application/V1/messaging/servers/clear/{server}").GetAwaiter().GetResult();
+            if (!response.IsSuccessStatusCode)
+                throw new HttpRequestException("Could not clear server, server returned " + response.StatusCode + " " +  response.Content.ReadAsStringAsync().GetAwaiter().GetResult());
         }
     }
 }
