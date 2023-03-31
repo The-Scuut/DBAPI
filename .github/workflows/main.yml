@@ -18,17 +18,9 @@ jobs:
   build-win:
     runs-on: windows-latest
     steps:
-      - name: setup-msbuild
-        uses: microsoft/setup-msbuild@v1.1.3
+      - uses: actions/setup-dotnet@v3
         with:
-          # Folder location of where vswhere.exe is located if a self-hosted agent
-          # vswhere-path: # optional
-          # Version of Visual Studio to search; defaults to latest if not specified
-          # vs-version: # optional
-          # Enable searching for pre-release versions of Visual Studio/MSBuild
-          vs-prerelease: false # optional
-          # The preferred processor architecture of MSBuild. Can be either "x86" or "x64". "x64" is only available from Visual Studio version 17.0 and later.
-          msbuild-architecture: x64
+          dotnet-version: '6.0.x'
       - name: Setup NuGet
         uses: NuGet/setup-nuget@v1.0.5
 
@@ -49,7 +41,7 @@ jobs:
         shell: pwsh
         run: |
           cd DBAPI
-          msbuild.exe DBAPI.sln /p:Configuration="Release" /p:Platform="Any CPU"
+          dotnet build /p:Configuration="Release" /p:Platform="Any CPU"
       - uses: ncipollo/release-action@v1
         with:
           artifacts: "DBAPI/bin/Release/net6.0/DBAPI.exe"
