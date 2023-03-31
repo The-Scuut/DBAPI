@@ -38,10 +38,10 @@
         <Reference Include="System.Core" />
         <Reference Include="System.Data" />
         <Reference Include="System.Net.Http">
-          <HintPath>..\..\..\..\Steam\steamapps\common\SCP Secret Laboratory Dedicated Server\SCPSL_Data\Managed\System.Net.Http.dll</HintPath>
+          <HintPath>$(EXILED_REFERENCES)\System.Net.Http.dll</HintPath>
         </Reference>
         <Reference Include="System.Web">
-          <HintPath>..\..\..\..\Steam\steamapps\common\SCP Secret Laboratory Dedicated Server\SCPSL_Data\Managed\System.Web.dll</HintPath>
+          <HintPath>$(EXILED_REFERENCES)\System.Web.dll</HintPath>
         </Reference>
         <Reference Include="System.Xml" />
     </ItemGroup>
