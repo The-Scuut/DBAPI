@@ -17,11 +17,13 @@ public class InstanceController : ControllerBase
     [HttpGet("[controller]/getinfo")]
     public async Task<IActionResult> GetInfo()
     {
+        var certhash = CurrentCertificateInfo.Certificate?.GetCertHash();
+        var cert = certhash != null ? Convert.ToBase64String(certhash) : null;
         return Content(JsonConvert.SerializeObject(new
         {
             HttpsEnabled = CurrentCertificateInfo.Manager != null,
             SelfSigned = CurrentCertificateInfo.Manager?.IsSelfSigned ?? false,
-            Certificate = CurrentCertificateInfo.Certificate?.ToString() ?? "",
+            Certificate = cert ?? "",
         }));
     }
 }

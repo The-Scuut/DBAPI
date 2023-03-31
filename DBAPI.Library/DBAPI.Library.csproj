@@ -12,6 +12,7 @@
         <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
         <FileAlignment>512</FileAlignment>
         <LangVersion>9</LangVersion>
+        <Nullable>enable</Nullable>
     </PropertyGroup>
     <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
         <PlatformTarget>AnyCPU</PlatformTarget>
@@ -50,6 +51,7 @@
         <Compile Include="DBTypeConverter.cs" />
         <Compile Include="IDBTypeConverter.cs" />
         <Compile Include="Models\APIClientParameters.cs" />
+        <Compile Include="Models\IIDEntity.cs" />
         <Compile Include="ObjectConverter.cs" />
         <Compile Include="Properties\AssemblyInfo.cs" />
     </ItemGroup>

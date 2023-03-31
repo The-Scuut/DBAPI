@@ -1,6 +1,8 @@
 ﻿namespace DBAPI.Library
 {
     using System;
+    using System.Collections.Generic;
+    using System.Linq;
     using System.Net.Http;
     using System.Text;
     using System.Threading;
@@ -12,6 +14,7 @@
         public string Host { get; }
         private readonly Guid _token;
         private HttpClient _client;
+        private readonly Dictionary<object, object[]> _trackedObjects = new Dictionary<object, object[]>();
 
         public APIClient(APIClientParameters parameters)
         {
@@ -29,7 +32,7 @@
                     throw new ArgumentException("Invalid token format");
             }
             _client = new HttpClient();
-            _client.DefaultRequestHeaders.Add("token", Convert.ToBase64String(Encoding.UTF8.GetBytes(_token.ToString())));
+            AddToken(_client);
         }
 
         public void Connect()
@@ -38,13 +41,58 @@
             {
                 ServerCertificateCustomValidationCallback = (_, _, _, _) => true
             });
+            AddToken(getInfoClient);
             try
             {
                 var serverInfo = getInfoClient.GetAsync(Host+"/Application/V1/Instance/getinfo").GetAwaiter().GetResult();
                 if (!serverInfo.IsSuccessStatusCode)
-                    throw new HttpRequestException("Connection unsuccessful, server returned " + serverInfo.StatusCode);
+                    throw new HttpRequestException("Connection unsuccessful, server returned " + serverInfo.StatusCode + " " +  serverInfo.Content.ReadAsStringAsync().GetAwaiter().GetResult());
                 var stringInfo = serverInfo.Content.ReadAsStringAsync().GetAwaiter().GetResult();
-                Console.WriteLine(stringInfo);
+                stringInfo = stringInfo.TrimStart('{').TrimEnd('}');
+                var split = stringInfo.Split(',');
+                bool selfSigned = false;
+                foreach (var value in split)
+                {
+                    string[] values = value.Replace("\"", "").Split(':');
+                    string key = values.FirstOrDefault() ??
+#if DEBUG
+                                 throw new HttpRequestException();
+#else
+                                 string.Empty;
+#endif
+                    switch (key)
+                    {
+                        case "HttpsEnabled":
+                            break;
+                        case "SelfSigned":
+                            if (bool.TryParse(values.LastOrDefault(), out var result) && result)
+                                selfSigned = true;
+                            break;
+                        case "Certificate":
+                            var cert = values.LastOrDefault() ?? 
+#if DEBUG
+                                    throw new HttpRequestException();
+#else
+                                    string.Empty;
+#endif
+                            if (selfSigned)
+                            {
+                                _client.Dispose();
+                                byte[] certHash = Convert.FromBase64String(cert);
+                                _client = new HttpClient(new HttpClientHandler()
+                                {
+                                    ServerCertificateCustomValidationCallback = (_, cert, _, _) => cert.GetCertHash().SequenceEqual(certHash),
+                                });
+                                AddToken(_client);
+                            }
+                            break;
+                        default:
+#if DEBUG
+                            throw new HttpRequestException("Unknown key: " + key);
+#endif
+                            break;
+                    }
+                }
             }
             catch (HttpRequestException e)
             {
@@ -56,26 +104,266 @@
             }
         }
 
-        public readonly Action<string> OnMessageReceived = (s) => { };
+        public Action<string, string> OnMessageReceived = (s, s2) => { };
 
         public void Dispose()
         {
             _client?.Dispose();
+            _client = null;
         }
 
-        public void ListenToMessages(float interval = 3)
+        ~APIClient()
         {
-            Action<string> callback = (s) => { OnMessageReceived(s);};
-            Task.Run(() => ListenToMessagesAsync(CancellationToken.None, callback, interval));
+            Dispose();
         }
 
-        private async Task ListenToMessagesAsync(CancellationToken token, Action<string> callback, float interval)
+        public Task ListenToMessages(string channel, float interval = 3)
         {
+            if (string.IsNullOrWhiteSpace(channel))
+                throw new ArgumentException("Channel cannot be null or empty", nameof(channel));
+            if (channel.Contains(" "))
+                throw new ArgumentException("Channel cannot contain spaces", nameof(channel));
+            Action<string> callback = (s) => { OnMessageReceived(channel, s);};
+            return Task.Run(() => ListenToMessagesAsync(channel, CancellationToken.None, callback, interval));
+        }
+
+        private async Task ListenToMessagesAsync(string channel, CancellationToken token, Action<string> callback, float interval)
+        {
+            int failedAttempts = 0;
             while (!token.IsCancellationRequested)
             {
                 await Task.Delay(TimeSpan.FromSeconds(interval), token);
-                
+                var response = await _client.GetAsync(Host + $"/Application/V1/Messaging/read/{channel}", token);
+                if (!response.IsSuccessStatusCode)
+                {
+                    failedAttempts++;
+                    if (failedAttempts > 5)
+                        throw new HttpRequestException("Connection exceeded 5 failed attempts, last status code: " + response.StatusCode + " " +  response.Content.ReadAsStringAsync().GetAwaiter().GetResult());
+                    continue;
+                }
+                failedAttempts = 0;
+                var content = await response.Content.ReadAsStringAsync();
+                if (string.IsNullOrWhiteSpace(content) || content == "null" || content == "[]")
+                    continue;
+                content = content.TrimStart('[').TrimEnd(']');
+                foreach (var message in content.Split(';'))
+                {
+                    callback(message);
+                }
             }
+        }
+
+        public void SendMessage<T>(string channel, T message) where T : class
+        {
+            if (string.IsNullOrWhiteSpace(channel))
+                throw new ArgumentException("Channel cannot be null or empty", nameof(channel));
+            if (channel.Contains(" "))
+                throw new ArgumentException("Channel cannot contain spaces", nameof(channel));
+            if (message == null)
+                throw new ArgumentException("Message cannot be null", nameof(message));
+            var converter = ObjectConverter.GetTypeConverter<T>();
+            var response = _client.PostAsync(Host + $"/Application/V1/Messaging/send/{channel}", new StringContent(converter.SerializeForMessage(new []{message}), Encoding.UTF8, "application/json")).GetAwaiter().GetResult();
+            if (!response.IsSuccessStatusCode)
+                throw new HttpRequestException("Could not send message, server returned " + response.StatusCode + " " +  response.Content.ReadAsStringAsync().GetAwaiter().GetResult());
+        }
+
+        public void SendMessages<T>(string channel, IEnumerable<T> messages) where T : class
+        {
+            if (string.IsNullOrWhiteSpace(channel))
+                throw new ArgumentException("Channel cannot be null or empty", nameof(channel));
+            if (channel.Contains(" "))
+                throw new ArgumentException("Channel cannot contain spaces", nameof(channel));
+            if (messages == null)
+                throw new ArgumentException("Messages cannot be null", nameof(messages));
+            var converter = ObjectConverter.GetTypeConverter<T>();
+            var response = _client.PostAsync(Host + $"/Application/V1/Messaging/send/{channel}", new StringContent(converter.SerializeForMessage(messages), Encoding.UTF8, "application/json")).GetAwaiter().GetResult();
+            if (!response.IsSuccessStatusCode)
+                throw new HttpRequestException("Could not send messages, server returned " + response.StatusCode + " " +  response.Content.ReadAsStringAsync().GetAwaiter().GetResult());
+        }
+
+        public T[] ReadMessages<T>(string channel, bool peek = false) where T : class
+        {
+            if (string.IsNullOrWhiteSpace(channel))
+                throw new ArgumentException("Channel cannot be null or empty", nameof(channel));
+            if (channel.Contains(" "))
+                throw new ArgumentException("Channel cannot contain spaces", nameof(channel));
+            string path = peek ? "peek" : "read";
+            var response = _client.GetAsync(Host + $"/Application/V1/Messaging/{path}/{channel}").GetAwaiter().GetResult();
+            if (!response.IsSuccessStatusCode)
+                throw new HttpRequestException("Could not peek messages, server returned " + response.StatusCode + " " +  response.Content.ReadAsStringAsync().GetAwaiter().GetResult());
+            var content = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+
+            if (string.IsNullOrWhiteSpace(content) || content == "null" || content == "[]")
+                return Array.Empty<T>();
+            var converter = ObjectConverter.GetTypeConverter<T>();
+            return converter.DeserializeEnumerableMessage(content).ToArray();
+        }
+
+        public T[] GetCollection<T>(string tableName) where T : class
+        {
+            if (string.IsNullOrWhiteSpace(tableName))
+                throw new ArgumentException("Table name cannot be null or empty", nameof(tableName));
+            if (tableName.Contains(" "))
+                throw new ArgumentException("Table name cannot contain spaces", nameof(tableName));
+            var response = _client.GetAsync(Host + $"/Application/V1/datastore/selectall/{tableName}").GetAwaiter().GetResult();
+            var content = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+            if (!response.IsSuccessStatusCode)
+                throw new HttpRequestException("Could not get collection, server returned " + response.StatusCode + " " +  content);
+            var converter = ObjectConverter.GetTypeConverter<T>();
+            return Track(converter.DeserializeEnumerableMessage(content).ToArray());
+        }
+
+        public T? GetById<T>(string tableName, ulong id) where T : class, IIDEntity
+        {
+            if (string.IsNullOrWhiteSpace(tableName))
+                throw new ArgumentException("Table name cannot be null or empty", nameof(tableName));
+            if (tableName.Contains(" "))
+                throw new ArgumentException("Table name cannot contain spaces", nameof(tableName));
+            var response = _client.PostAsync(Host + $"/Application/V1/datastore/select/{tableName}", new StringContent($"*|ID='{id}'", Encoding.UTF8, "application/json")).GetAwaiter().GetResult();
+            var content = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+            if (!response.IsSuccessStatusCode)
+                throw new HttpRequestException("Could not get by id, server returned " + response.StatusCode + " " +  content);
+            var converter = ObjectConverter.GetTypeConverter<T>();
+            var result = converter.DeserializeSql(content);
+            return result.Length == 0 ? null : Track(result[0]);
+        }
+        
+        public void CreateCollection<T>(string tableName) where T : class
+        {
+            if (string.IsNullOrWhiteSpace(tableName))
+                throw new ArgumentException("Table name cannot be null or empty", nameof(tableName));
+            if (tableName.Contains(" "))
+                throw new ArgumentException("Table name cannot contain spaces", nameof(tableName));
+            var converter = ObjectConverter.GetTypeConverter<T>();
+            var response = _client.PostAsync(Host + $"/Application/V1/datastore/table/create/{tableName}", new StringContent(converter.MySqlTypesString, Encoding.UTF8, "application/json")).GetAwaiter().GetResult();
+            if (!response.IsSuccessStatusCode)
+                throw new HttpRequestException("Could not create collection, server returned " + response.StatusCode + " " +  response.Content.ReadAsStringAsync().GetAwaiter().GetResult());
+        }
+
+        public void EnsureCollectionExists<T>(string tableName) where T : class
+        {
+            if (string.IsNullOrWhiteSpace(tableName))
+                throw new ArgumentException("Table name cannot be null or empty", nameof(tableName));
+            if (tableName.Contains(" "))
+                throw new ArgumentException("Table name cannot contain spaces", nameof(tableName));
+            var converter = ObjectConverter.GetTypeConverter<T>();
+            var response = _client.PostAsync(Host + $"/Application/V1/datastore/table/ensureexist/{tableName}", new StringContent(converter.MySqlTypesString, Encoding.UTF8, "application/json")).GetAwaiter().GetResult();
+            if (!response.IsSuccessStatusCode)
+                throw new HttpRequestException("Could not create collection, server returned " + response.StatusCode + " " +  response.Content.ReadAsStringAsync().GetAwaiter().GetResult());
+        }
+
+        public void Insert<T>(string tableName, T entity) where T : class
+        {
+            if (string.IsNullOrWhiteSpace(tableName))
+                throw new ArgumentException("Table name cannot be null or empty", nameof(tableName));
+            if (tableName.Contains(" "))
+                throw new ArgumentException("Table name cannot contain spaces", nameof(tableName));
+            if (entity == null)
+                throw new ArgumentException("Entity cannot be null", nameof(entity));
+            var converter = ObjectConverter.GetTypeConverter<T>();
+            var response = _client.PostAsync(Host + $"/Application/V1/datastore/insert/{tableName}", new StringContent(converter.SerializeSql(entity), Encoding.UTF8, "application/json")).GetAwaiter().GetResult();
+            if (!response.IsSuccessStatusCode)
+                throw new HttpRequestException("Could not insert entity, server returned " + response.StatusCode + " " +  response.Content.ReadAsStringAsync().GetAwaiter().GetResult());
+        }
+
+        public void Insert<T>(string tableName, IEnumerable<T> entities) where T : class
+        {
+            if (string.IsNullOrWhiteSpace(tableName))
+                throw new ArgumentException("Table name cannot be null or empty", nameof(tableName));
+            if (tableName.Contains(" "))
+                throw new ArgumentException("Table name cannot contain spaces", nameof(tableName));
+            if (entities == null)
+                throw new ArgumentException("Entities cannot be null", nameof(entities));
+            var converter = ObjectConverter.GetTypeConverter<T>();
+            var response = _client.PostAsync(Host + $"/Application/V1/datastore/insert/{tableName}", new StringContent(converter.SerializeSql(entities), Encoding.UTF8, "application/json")).GetAwaiter().GetResult();
+            if (!response.IsSuccessStatusCode)
+                throw new HttpRequestException("Could not insert entities, server returned " + response.StatusCode + " " +  response.Content.ReadAsStringAsync().GetAwaiter().GetResult());
+        }
+
+        public void Delete<T>(string tableName, T entity) where T : class
+        {
+            if (string.IsNullOrWhiteSpace(tableName))
+                throw new ArgumentException("Table name cannot be null or empty", nameof(tableName));
+            if (tableName.Contains(" "))
+                throw new ArgumentException("Table name cannot contain spaces", nameof(tableName));
+            if (entity == null)
+                throw new ArgumentException("Entity cannot be null", nameof(entity));
+            var converter = ObjectConverter.GetTypeConverter<T>();
+            var response = _client.PostAsync(Host + $"/Application/V1/datastore/delete/{tableName}", new StringContent(converter.SerializeSqlWhere(entity), Encoding.UTF8, "application/json")).GetAwaiter().GetResult();
+            if (!response.IsSuccessStatusCode)
+                throw new HttpRequestException("Could not delete entity, server returned " + response.StatusCode + " " +  response.Content.ReadAsStringAsync().GetAwaiter().GetResult());
+            Untrack(entity);
+        }
+
+        public void Update<T>(string tableName, T entity) where T : class
+        {
+            if (string.IsNullOrWhiteSpace(tableName))
+                throw new ArgumentException("Table name cannot be null or empty", nameof(tableName));
+            if (tableName.Contains(" "))
+                throw new ArgumentException("Table name cannot contain spaces", nameof(tableName));
+            if (entity == null)
+                throw new ArgumentException("Entity cannot be null", nameof(entity));
+            if (!_trackedObjects.TryGetValue(entity, out var tracked))
+                throw new ArgumentException("Entity is not tracked", nameof(entity));
+            var converter = ObjectConverter.GetTypeConverter<T>();
+            var response = _client.PostAsync(Host + $"/Application/V1/datastore/update/{tableName}", new StringContent(converter.SerializeSqlSet(entity)+"|"+SerializeSqlTracked<T>(tracked), Encoding.UTF8, "application/json")).GetAwaiter().GetResult();
+            if (!response.IsSuccessStatusCode)
+                throw new HttpRequestException("Could not update entity, server returned " + response.StatusCode + " " +  response.Content.ReadAsStringAsync().GetAwaiter().GetResult());
+        }
+
+        private void AddToken(HttpClient client)
+        {
+            client.DefaultRequestHeaders.Add("token", Convert.ToBase64String(Encoding.UTF8.GetBytes(_token.ToString())));
+        }
+
+        private T Track<T>(T obj) where T : class
+        {
+            var converter = ObjectConverter.GetTypeConverter<T>();
+            var properties = converter.TrackedProperties;
+            object[] values = new object[properties.Length];
+            for (int i = 0; i < properties.Length; i++)
+            {
+                var currValue = properties[i].GetValue(obj) ?? "NULL";
+                if (currValue is string valueString)
+                    values[i] = valueString.Replace("\"", "");
+                else
+                    values[i] = currValue;
+            }
+            _trackedObjects.Add(obj, values);
+            return obj;
+        }
+
+        private IEnumerable<T> Track<T>(IEnumerable<T> objs) where T : class
+        {
+            foreach (var obj in objs)
+            {
+                Track(obj);
+            }
+            return objs;
+        }
+
+        private void Untrack<T>(T obj) where T : class
+        {
+            _trackedObjects.Remove(obj);
+        }
+
+        private string SerializeSqlTracked<T>(object[] trackedValues) where T : class
+        {
+            var converter = ObjectConverter.GetTypeConverter<T>();
+            var properties = converter.TrackedProperties;
+            string[] values = new string[properties.Length];
+            for (int i = 0; i < properties.Length; i++)
+            {
+                var property = properties[i];
+                var value = trackedValues[i];
+                if (value == null || value == "NULL")
+                    values[i] += $"{property.Name}=NULL";
+                else if (property.PropertyType == typeof(string))
+                    values[i] += $"{property.Name}='{value}'";
+                else
+                    values[i] += $"{property.Name}={value}";
+            }
+            return $"{string.Join(" AND ", values)}";
         }
     }
 }

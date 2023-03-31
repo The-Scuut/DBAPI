@@ -128,7 +128,7 @@ public class CertificateManager
                 .GetAwaiter().GetResult();
             if (!connTest.IsSuccessStatusCode)
             {
-                ConsoleUtils.WriteLine($"Connection test failed ({connTest.StatusCode} {connTest.ReasonPhrase}).", ConsoleColor.Red);
+                ConsoleUtils.WriteLine($"Connection test failed ({connTest.StatusCode} {connTest.Content.ReadAsStringAsync().GetAwaiter().GetResult()}).", ConsoleColor.Red);
                 return false;
             }
             if (connTest.Content.ReadAsStringAsync().GetAwaiter().GetResult() != keyAuth)

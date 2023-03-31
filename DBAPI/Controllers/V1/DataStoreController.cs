@@ -36,16 +36,16 @@ public class DataStoreController : ControllerBase
     }
 
     [HttpPost("[controller]/table/create/{name}")]
-    public async Task<IActionResult> Create(string name, [FromBody]object types)
+    public async Task<IActionResult> Create(string name)
     {
         if (await DBHandler.CheckTableExists(name))
             return BadRequest("Table already exists");
-        var deserializeObject = JsonConvert.DeserializeObject<Dictionary<string, object>>(types.ToString() ?? string.Empty);
-        if (deserializeObject == null || !deserializeObject.ContainsKey("types") || deserializeObject["types"] is not string typesString)
-            return BadRequest("Invalid types");
+        var body = await new StreamReader(Request.Body).ReadToEndAsync();
+        if (string.IsNullOrWhiteSpace(body))
+            return BadRequest("Invalid body");
         try
         {
-            await DBHandler.ExecuteNonQuery($"CREATE TABLE {name} ({typesString})");
+            await DBHandler.ExecuteNonQuery($"CREATE TABLE {name} ({body})");
         }
         catch (Exception e)
         {
@@ -57,16 +57,16 @@ public class DataStoreController : ControllerBase
     }
 
     [HttpPost("[controller]/table/ensureexist/{name}")]
-    public async Task<IActionResult> EnsureExist(string name, [FromBody]object types)
+    public async Task<IActionResult> EnsureExist(string name)
     {
         if (await DBHandler.CheckTableExists(name))
             return Ok();
-        var deserializeObject = JsonConvert.DeserializeObject<Dictionary<string, object>>(types.ToString() ?? string.Empty);
-        if (deserializeObject == null || !deserializeObject.ContainsKey("types") || deserializeObject["types"] is not string typesString)
-            return BadRequest("Invalid types");
+        var body = await new StreamReader(Request.Body).ReadToEndAsync();
+        if (string.IsNullOrWhiteSpace(body))
+            return BadRequest("Invalid body, (missing types?)");
         try
         {
-            await DBHandler.ExecuteNonQuery($"CREATE TABLE {name} ({typesString})");
+            await DBHandler.ExecuteNonQuery($"CREATE TABLE {name} ({body})");
         }
         catch (Exception e)
         {
@@ -78,7 +78,7 @@ public class DataStoreController : ControllerBase
     }
 
     [HttpPost("[controller]/table/delete/{name}")]
-    public async Task<IActionResult> Delete(string name)
+    public async Task<IActionResult> DeleteTable(string name)
     {
         if (!await DBHandler.CheckTableExists(name))
             return BadRequest("Table does not exist");
@@ -95,21 +95,41 @@ public class DataStoreController : ControllerBase
         return Ok();
     }
 
+    [HttpPost("[controller]/insert/{table}")]
+    public async Task<IActionResult> Insert(string table)
+    {
+        var body = await new StreamReader(Request.Body).ReadToEndAsync();
+        if (string.IsNullOrWhiteSpace(body))
+            return BadRequest("Body invalid");
+        if (!await DBHandler.CheckTableExists(table))
+            return BadRequest("Table does not exist");
+        try
+        {
+            await DBHandler.ExecuteNonQuery($"INSERT INTO {table} VALUES ({body})");
+        }
+        catch (Exception e)
+        {
+            ConsoleUtils.WriteLine(e, ConsoleColor.Red);
+            return Problem(e.ToString());
+        }
+
+        return Ok();
+    }
+
     [HttpPost("[controller]/insert")]
-    public async Task<IActionResult> Insert([FromBody]object data)
+    public async Task<IActionResult> InsertPartial()
     {
-        var deserializeObject = JsonConvert.DeserializeObject<Dictionary<string, object>>(data.ToString() ?? string.Empty);
-        if (deserializeObject == null)
+        var body = await new StreamReader(Request.Body).ReadToEndAsync();
+        if (string.IsNullOrWhiteSpace(body))
             return BadRequest("Body invalid");
-        if (!deserializeObject.ContainsKey("table") || deserializeObject["table"] is not string tableString)
-            return BadRequest("Invalid table");
-        if (!await DBHandler.CheckTableExists(tableString))
+        var split = body.Split("|");
+        if (split.Length != 2)
+            return BadRequest("Body invalid, must be in format \"table|where\"");
+        if (!await DBHandler.CheckTableExists(split[0]))
             return BadRequest("Table does not exist");
-        if (!deserializeObject.ContainsKey("values") || deserializeObject["values"] is not string valuesString)
-            return BadRequest("Invalid values");
         try
         {
-            await DBHandler.ExecuteNonQuery($"INSERT INTO {tableString} VALUES ({valuesString})");
+            await DBHandler.ExecuteNonQuery($"INSERT INTO {split[0]} VALUES ({split[1]})");
         }
         catch (Exception e)
         {
@@ -120,23 +140,20 @@ public class DataStoreController : ControllerBase
         return Ok();
     }
 
-    [HttpPost("[controller]/update")]
-    public async Task<IActionResult> Update([FromBody]object data)
+    [HttpPost("[controller]/update/{table}")]
+    public async Task<IActionResult> Update(string table)
     {
-        var deserializeObject = JsonConvert.DeserializeObject<Dictionary<string, object>>(data.ToString() ?? string.Empty);
-        if (deserializeObject == null)
+        var body = await new StreamReader(Request.Body).ReadToEndAsync();
+        if (string.IsNullOrWhiteSpace(body))
             return BadRequest("Body invalid");
-        if (!deserializeObject.ContainsKey("table") || deserializeObject["table"] is not string tableString)
-            return BadRequest("Invalid table");
-        if (!await DBHandler.CheckTableExists(tableString))
+        var split = body.Split("|");
+        if (split.Length != 2)
+            return BadRequest("Body invalid, must be in format \"values|where\"");
+        if (!await DBHandler.CheckTableExists(table))
             return BadRequest("Table does not exist");
-        if (!deserializeObject.ContainsKey("values") || deserializeObject["values"] is not string valuesString)
-            return BadRequest("Invalid values");
-        if (!deserializeObject.ContainsKey("where") || deserializeObject["where"] is not string whereString)
-            return BadRequest("Invalid where");
         try
         {
-            await DBHandler.ExecuteNonQuery($"UPDATE {tableString} SET {valuesString} WHERE {whereString}");
+            await DBHandler.ExecuteNonQuery($"UPDATE {table} SET {split[0]} WHERE {split[1]}");
         }
         catch (Exception e)
         {
@@ -147,21 +164,17 @@ public class DataStoreController : ControllerBase
         return Ok();
     }
 
-    [HttpPost("[controller]/delete")]
-    public async Task<IActionResult> Delete([FromBody]object data)
+    [HttpPost("[controller]/delete/{table}")]
+    public async Task<IActionResult> Delete(string table)
     {
-        var deserializeObject = JsonConvert.DeserializeObject<Dictionary<string, object>>(data.ToString() ?? string.Empty);
-        if (deserializeObject == null)
+        var body = await new StreamReader(Request.Body).ReadToEndAsync();
+        if (string.IsNullOrWhiteSpace(body))
             return BadRequest("Body invalid");
-        if (!deserializeObject.ContainsKey("table") || deserializeObject["table"] is not string tableString)
-            return BadRequest("Invalid table");
-        if (!await DBHandler.CheckTableExists(tableString))
+        if (!await DBHandler.CheckTableExists(table))
             return BadRequest("Table does not exist");
-        if (!deserializeObject.ContainsKey("where") || deserializeObject["where"] is not string whereString)
-            return BadRequest("Invalid where");
         try
         {
-            await DBHandler.ExecuteNonQuery($"DELETE FROM {tableString} WHERE {whereString}");
+            await DBHandler.ExecuteNonQuery($"DELETE FROM {table} WHERE {body}");
         }
         catch (Exception e)
         {
@@ -172,22 +185,20 @@ public class DataStoreController : ControllerBase
         return Ok();
     }
 
-    [HttpPost("[controller]/select")]
-    public async Task<IActionResult> Select([FromBody]object data)
+    [HttpPost("[controller]/select/{table}")]
+    public async Task<IActionResult> Select(string table)
     {
-        var deserializeObject = JsonConvert.DeserializeObject<Dictionary<string, object>>(data.ToString() ?? string.Empty);
-        if (deserializeObject == null)
+        var body = await new StreamReader(Request.Body).ReadToEndAsync();
+        if (string.IsNullOrWhiteSpace(body))
             return BadRequest("Body invalid");
-        if (!deserializeObject.ContainsKey("table") || deserializeObject["table"] is not string tableString)
-            return BadRequest("Invalid table");
-        if (!await DBHandler.CheckTableExists(tableString))
+        var split = body.Split("|");
+        if (split.Length != 2)
+            return BadRequest("Body invalid, must be in format \"select|where\"");
+        if (!await DBHandler.CheckTableExists(table))
             return BadRequest("Table does not exist");
-        if (!deserializeObject.ContainsKey("where") || deserializeObject["where"] is not string whereString)
-            return BadRequest("Invalid where");
-        string selectString = deserializeObject.ContainsKey("select") && deserializeObject["select"] is string selectString1 ? selectString1 : "*";
         try
         {
-            var query = DBHandler.ExecuteQueryMultirow($"SELECT {selectString} FROM {tableString} WHERE {whereString}");
+            var query = DBHandler.ExecuteQueryMultirow($"SELECT {split[0]} FROM {table} WHERE {split[1]}");
             List<object[]> result = new();
             await foreach (var queryObject in query)
             {
@@ -204,7 +215,7 @@ public class DataStoreController : ControllerBase
     }
 
     [HttpGet("[controller]/selectall/{table}")]
-    public async Task<IActionResult> Select(string table)
+    public async Task<IActionResult> SelectAll(string table)
     {
         if (!await DBHandler.CheckTableExists(table))
             return BadRequest("Table does not exist");

@@ -1,6 +1,7 @@
 ﻿namespace DBAPI;
 
 using System.Globalization;
+using DBAPI.Controllers.V1;
 using DBAPI.Models;
 
 public static class ConsoleUtils
@@ -225,7 +226,7 @@ public static class ConsoleUtils
                 string url = "";
                 if (args.Length > 1 && args.ElementAt(0) == "v1")
                 {
-                    url = "/Application/V1/"+args.ElementAt(1);
+                    url = "/Application/V1/"+args.ElementAt(1).TrimStartSlash();
                 }
                 else
                     url = args.Length > 0 ? args.ElementAt(0) : ReadLine("Location: ", ConsoleColor.Cyan) ?? "/";
@@ -243,13 +244,18 @@ public static class ConsoleUtils
                 break;
             case "post":
                 string urlPost = "";
+                string content = "";
                 if (args.Length > 1 && args.ElementAt(0) == "v1")
                 {
-                    urlPost = "/Application/V1/"+args.ElementAt(1);
+                    urlPost = "/Application/V1/"+args.ElementAt(1).TrimStartSlash();
+                    content = string.Join(' ', args.Skip(2));
                 }
                 else
+                {
                     urlPost = args.Length > 0 ? args.ElementAt(0) : ReadLine("Location: ", ConsoleColor.Cyan) ?? "/";
-                var responsePost = ClientEmulator.PostAsync(urlPost, string.Join(' ', args.Skip(2))).GetAwaiter().GetResult();
+                    content = string.Join(' ', args.Skip(1));
+                }
+                var responsePost = ClientEmulator.PostAsync(urlPost, content).GetAwaiter().GetResult();
                 if (responsePost.IsSuccessStatusCode)
                 {
                     WriteLine("Status: " + responsePost.StatusCode, ConsoleColor.Green);
@@ -306,6 +312,14 @@ public static class ConsoleUtils
                     break;
                 }
                 WriteLine($"Restored from: {fileRestore}.", ConsoleColor.Green);
+                break;
+            case "message":
+                string channel = args.Length > 0 ? args.ElementAt(0) : ReadLine("Channel: ", ConsoleColor.Cyan) ?? "";
+                string message = args.Length > 1 ? string.Join(" ", args.Skip(1)) : "";
+                if (!MessagingController.Messages.ContainsKey(channel))
+                    MessagingController.Messages.Add(channel, new[] { message });
+                else
+                    MessagingController.Messages[channel] = MessagingController.Messages[channel].Append(message).ToArray();
                 break;
             case "exit":
             case "quit":
