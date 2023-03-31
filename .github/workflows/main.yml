@@ -47,7 +47,6 @@ jobs:
           dotnet publish --runtime linux-x64 --self-contained true --framework net6.0 --configuration Release -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true DBAPI/DBAPI.csproj
       - name: Release
         uses: softprops/action-gh-release@v1
-        if: startsWith(github.ref, 'refs/tags/')
         with:
           name: "${{ github.event.head_commit.message }} - ${{ github.sha }}"
           tag_name: "${{ github.run_id }}"
