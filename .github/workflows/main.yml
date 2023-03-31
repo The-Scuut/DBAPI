@@ -29,16 +29,12 @@ jobs:
         run: |
           Invoke-WebRequest -Uri ${{ env.EXILED_REFERENCES_URL }} -OutFile ${{ github.workspace }}/References.zip
           Expand-Archive -Path References.zip -DestinationPath ${{ env.EXILED_REFERENCES_PATH }}
-
-      - name: Restore Packages
-        run: nuget restore ScuutCore\DBAPI.sln
         
       - name: Build
         env:
           EXILED_REFERENCES: ${{ env.EXILED_REFERENCES_PATH }}
         shell: pwsh
         run: |
-          cd DBAPI
           dotnet build /p:Configuration="Release" /p:Platform="Any CPU"
       - uses: ncipollo/release-action@v1
         with:
