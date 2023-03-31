@@ -7,8 +7,9 @@ public static class ConfigManager
 {
     public const string DBConfigPath = "dbconfig.json";
     public const string APIConfigPath = "apiconfig.json";
-    public static DatabaseConfig DBConfig { get; private set; }
-    public static APIConfig APIConfig { get; private set; }
+    public static DatabaseConfig DBConfig { get; private set; } = null!;
+    public static APIConfig APIConfig { get; private set; } = null!;
+
     public static bool EnsureConfigsExists()
     {
         bool isDefault = false;
