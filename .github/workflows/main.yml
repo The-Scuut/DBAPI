@@ -36,10 +36,23 @@ jobs:
         shell: pwsh
         run: |
           dotnet build /p:Configuration="Release" /p:Platform="Any CPU"
+          
+      - name: Publish win
+        shell: pwsh
+        run: |
+          dotnet publish --runtime win10-x64 --self-contained true --framework net6.0 --configuration Release -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true DBAPI/DBAPI.csproj
+      - name: Publish linux
+        shell: pwsh
+        run: |
+          dotnet publish --runtime linux-x64 --self-contained true --framework net6.0 --configuration Release -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true DBAPI/DBAPI.csproj
+
       - uses: ncipollo/release-action@v1
         with:
-          artifacts: "DBAPI/bin/Release/net6.0/DBAPI.exe"
-          generateReleaseNotes: false
+          artifacts: |
+            "DBAPI/bin/Release/net6.0/win10-x64/publish/DBAPI.exe"
+            "DBAPI/bin/Release/net6.0/linux-x64/publish/DBAPI"
+            "DBAPI.Library/bin/Release/DBAPI.Library.dll"
+          generateReleaseNotes: true
           makeLatest: true
           token: ${{ secrets.GITHUB_TOKEN }}
           commit: main
