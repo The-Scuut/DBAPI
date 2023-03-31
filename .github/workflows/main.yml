@@ -4,11 +4,9 @@ on:
   push:
     branches:
       - master
-      #- dev
   pull_request:
     branches:
       - master
-      #- dev
 
 env:
   EXILED_REFERENCES_URL: https://www.exiled.host/build_deps/Master.zip
