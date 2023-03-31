@@ -52,6 +52,6 @@ jobs:
           tag_name: "${{ github.run_id }}"
           token: ${{ secrets.GITHUB_TOKEN }}
           files: |
-            "DBAPI/bin/Release/net6.0/win10-x64/publish/DBAPI.exe"
-            "DBAPI/bin/Release/net6.0/linux-x64/publish/DBAPI"
-            "DBAPI.Library/bin/Release/DBAPI.Library.dll"
+            DBAPI/bin/Release/net6.0/win10-x64/publish/DBAPI.exe
+            DBAPI/bin/Release/net6.0/linux-x64/publish/DBAPI
+            DBAPI.Library/bin/Release/DBAPI.Library.dll
