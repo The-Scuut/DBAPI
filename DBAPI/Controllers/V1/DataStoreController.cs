@@ -77,7 +77,7 @@ public class DataStoreController : ControllerBase
         return Ok();
     }
 
-    [HttpPost("[controller]/table/delete/{name}")]
+    [HttpDelete("[controller]/table/delete/{name}")]
     public async Task<IActionResult> DeleteTable(string name)
     {
         if (!await DBHandler.CheckTableExists(name))

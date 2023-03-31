@@ -21,6 +21,15 @@
             return instance as DBTypeConverter<T>;
         }
 
+        public static IDBTypeConverter GetTypeConverter(Type type)
+        {
+            if (TypeConverters.TryGetValue(type, out var converter))
+                return converter;
+            Type[] typeArgs = { type };
+            var typeConverter = typeof(DBTypeConverter<>).MakeGenericType(typeArgs);
+            return (Activator.CreateInstance(typeConverter) as IDBTypeConverter)!;
+        }
+
         public static bool CanConvertToDbType(this Type type) =>
             type.UnderlyingSystemType == type || type.UnderlyingSystemType == null;
 

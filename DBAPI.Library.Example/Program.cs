@@ -49,13 +49,19 @@
                 if (!e.Message.Contains("duplicate"))
                     throw;
             }
-            var entity = apiclient.GetById<MyDataType>("testcol", 1);
+            //var entity = apiclient.GetById<MyDataType>("testcol", 1);
+            var entity = apiclient.GetByFields<MyDataType>("testcol", ("MyString", "real2"), ("ID", 1)).FirstOrDefault();
             Console.WriteLine(entity.MyString);
             entity.MyString = "real3";
             apiclient.Update("testcol", entity);
             entity = apiclient.GetById<MyDataType>("testcol", 1);
             Console.WriteLine(entity.MyString);
             apiclient.Delete("testcol", myObject);
+            apiclient.DeleteCollection("testcol");
+
+            apiclient.Ping("test");
+            var status = apiclient.GetServerStatus("test");
+            Console.WriteLine((DateTime.UtcNow - status).TotalMilliseconds);
             Console.Read();
 
             apiclient.Dispose();
