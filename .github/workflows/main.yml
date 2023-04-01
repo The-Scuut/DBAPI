@@ -54,4 +54,4 @@ jobs:
           files: |
             DBAPI/bin/Release/net6.0/win10-x64/publish/DBAPI.exe
             DBAPI/bin/Release/net6.0/linux-x64/publish/DBAPI
-            DBAPI.Library/bin/Release/DBAPI.Library.dll
+            DBAPI.Library/bin/Release/netstandard2.1/DBAPI.Library.dll
