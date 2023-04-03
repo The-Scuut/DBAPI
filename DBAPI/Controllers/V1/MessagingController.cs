@@ -37,11 +37,12 @@ public class MessagingController : ControllerBase
     }
 
     [HttpPost("[controller]/send/{channel}")]
-    public async Task<IActionResult> Send(string channel, [FromBody]object data)
+    public async Task<IActionResult> Send(string channel)
     {
         if (string.IsNullOrWhiteSpace(channel))
             return BadRequest("Channel may not be null or empty");
-        if (string.IsNullOrWhiteSpace(data?.ToString()))
+        var data = await new StreamReader(Request.Body).ReadToEndAsync();
+        if (string.IsNullOrWhiteSpace(data.ToString()))
             return BadRequest("Content may not be null or empty");
         if (!Messages.ContainsKey(channel))
         {

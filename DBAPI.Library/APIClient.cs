@@ -15,7 +15,7 @@
         public string Host { get; }
         private readonly Guid _token;
         private HttpClient _client;
-        private readonly Dictionary<object, object[]> _trackedObjects = new Dictionary<object, object[]>();
+        private readonly Dictionary<string, Dictionary<object, object[]>> _trackedObjects = new ();
 
         public APIClient(APIClientParameters parameters)
         {
@@ -240,7 +240,9 @@
             if (!response.IsSuccessStatusCode)
                 throw new HttpRequestException("Could not get collection, server returned " + response.StatusCode + " " +  content);
             var converter = ObjectConverter.GetTypeConverter<T>();
-            return TrackArray(converter.DeserializeEnumerableMessage(content).ToArray());
+            if (string.IsNullOrWhiteSpace(content) || content == "null" || content == "[]")
+                return Array.Empty<T>();
+            return TrackArray(tableName, converter.DeserializeSql(content).ToArray());
         }
 
         public T? GetById<T>(string tableName, ulong id) where T : class, IIDEntity
@@ -255,7 +257,7 @@
                 throw new HttpRequestException("Could not get by id, server returned " + response.StatusCode + " " +  content);
             var converter = ObjectConverter.GetTypeConverter<T>();
             var result = converter.DeserializeSql(content);
-            return result.Length == 0 ? null : Track(result[0]);
+            return result.Length == 0 ? null : Track(tableName, result[0]);
         }
 
         public T[]? GetByField<T>(string tableName, string property, object? value) where T : class
@@ -264,13 +266,13 @@
                 throw new ArgumentException("Table name cannot be null or empty", nameof(tableName));
             if (tableName.Contains(" "))
                 throw new ArgumentException("Table name cannot contain spaces", nameof(tableName));
-            var response = _client.PostAsync(Host + $"/Application/V1/datastore/select/{tableName}", new StringContent($"*|{property}={ToMysqlObject(value)}", Encoding.UTF8, "application/json")).GetAwaiter().GetResult();
+            var response = _client.PostAsync(Host + $"/Application/V1/datastore/select/{tableName}", new StringContent($"*|{property}={ObjectConverter.FromType(value)}", Encoding.UTF8, "application/json")).GetAwaiter().GetResult();
             var content = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
             if (!response.IsSuccessStatusCode)
                 throw new HttpRequestException("Could not get by field, server returned " + response.StatusCode + " " +  content);
             var converter = ObjectConverter.GetTypeConverter<T>();
             var result = converter.DeserializeSql(content);
-            return result.Length == 0 ? null : TrackArray(result);
+            return result.Length == 0 ? null : TrackArray(tableName, result);
         }
 
         public T[]? GetByFields<T>(string tableName, params (string, object?)[] properties) where T : class
@@ -284,12 +286,12 @@
             var converter = ObjectConverter.GetTypeConverter<T>();
             if (properties.Any(x => converter.TrackedProperties.All(y => y.Name != x.Item1)))
                 throw new ArgumentException("One or more properties do not exist in the table", nameof(properties));
-            var response = _client.PostAsync(Host + $"/Application/V1/datastore/select/{tableName}", new StringContent($"*|{string.Join(" AND ", properties.Select(x => $"{x.Item1}={ToMysqlObject(x.Item2)}"))}", Encoding.UTF8, "application/json")).GetAwaiter().GetResult();
+            var response = _client.PostAsync(Host + $"/Application/V1/datastore/select/{tableName}", new StringContent($"*|{string.Join(" AND ", properties.Select(x => $"{x.Item1}={ObjectConverter.FromType(x.Item2)}"))}", Encoding.UTF8, "application/json")).GetAwaiter().GetResult();
             var content = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
             if (!response.IsSuccessStatusCode)
                 throw new HttpRequestException("Could not get by fields, server returned " + response.StatusCode + " " +  content);
             var result = converter.DeserializeSql(content);
-            return result.Length == 0 ? null : TrackArray(result);
+            return result.Length == 0 ? null : TrackArray(tableName, result);
         }
 
         public void CreateCollection<T>(string tableName) where T : class
@@ -325,6 +327,7 @@
             var response = _client.DeleteAsync(Host + $"/Application/V1/datastore/table/delete/{tableName}").GetAwaiter().GetResult();
             if (!response.IsSuccessStatusCode)
                 throw new HttpRequestException("Could not delete collection, server returned " + response.StatusCode + " " +  response.Content.ReadAsStringAsync().GetAwaiter().GetResult());
+            UntrackTable(tableName);
         }
 
         public void Insert<T>(string tableName, T entity) where T : class
@@ -339,6 +342,7 @@
             var response = _client.PostAsync(Host + $"/Application/V1/datastore/insert/{tableName}", new StringContent(converter.SerializeSql(entity), Encoding.UTF8, "application/json")).GetAwaiter().GetResult();
             if (!response.IsSuccessStatusCode)
                 throw new HttpRequestException("Could not insert entity, server returned " + response.StatusCode + " " +  response.Content.ReadAsStringAsync().GetAwaiter().GetResult());
+            Track(tableName, entity);
         }
 
         public void Insert<T>(string tableName, IEnumerable<T> entities) where T : class
@@ -349,10 +353,12 @@
                 throw new ArgumentException("Table name cannot contain spaces", nameof(tableName));
             if (entities == null)
                 throw new ArgumentException("Entities cannot be null", nameof(entities));
+            entities = entities.ToArray();
             var converter = ObjectConverter.GetTypeConverter<T>();
             var response = _client.PostAsync(Host + $"/Application/V1/datastore/insert/{tableName}", new StringContent(converter.SerializeSql(entities), Encoding.UTF8, "application/json")).GetAwaiter().GetResult();
             if (!response.IsSuccessStatusCode)
                 throw new HttpRequestException("Could not insert entities, server returned " + response.StatusCode + " " +  response.Content.ReadAsStringAsync().GetAwaiter().GetResult());
+            TrackArray(tableName, entities.ToArray());
         }
 
         public void Delete<T>(string tableName, T entity) where T : class
@@ -370,6 +376,18 @@
             Untrack(entity);
         }
 
+        public void DeleteById(string tableName, long id)
+        {
+            if (string.IsNullOrWhiteSpace(tableName))
+                throw new ArgumentException("Table name cannot be null or empty", nameof(tableName));
+            if (tableName.Contains(" "))
+                throw new ArgumentException("Table name cannot contain spaces", nameof(tableName));
+            var response = _client.PostAsync(Host + $"/Application/V1/datastore/delete/{tableName}", new StringContent($"ID = {id}", Encoding.UTF8, "application/json")).GetAwaiter().GetResult();
+            if (!response.IsSuccessStatusCode)
+                throw new HttpRequestException("Could not delete entity by id, server returned " + response.StatusCode + " " +  response.Content.ReadAsStringAsync().GetAwaiter().GetResult());
+            UntrackId(id);
+        }
+
         public void Update<T>(string tableName, T entity) where T : class
         {
             if (string.IsNullOrWhiteSpace(tableName))
@@ -378,7 +396,9 @@
                 throw new ArgumentException("Table name cannot contain spaces", nameof(tableName));
             if (entity == null)
                 throw new ArgumentException("Entity cannot be null", nameof(entity));
-            if (!_trackedObjects.TryGetValue(entity, out var tracked))
+            if (!_trackedObjects.TryGetValue(tableName, out var tableDict))
+                throw new ArgumentException("Table is not tracked", nameof(entity));
+            if (!tableDict.TryGetValue(entity, out var tracked))
                 throw new ArgumentException("Entity is not tracked", nameof(entity));
             var converter = ObjectConverter.GetTypeConverter<T>();
             var response = _client.PostAsync(Host + $"/Application/V1/datastore/update/{tableName}", new StringContent(converter.SerializeSqlSet(entity)+"|"+SerializeSqlTracked<T>(tracked), Encoding.UTF8, "application/json")).GetAwaiter().GetResult();
@@ -391,26 +411,16 @@
             client.DefaultRequestHeaders.Add("token", Convert.ToBase64String(Encoding.UTF8.GetBytes(_token.ToString())));
         }
 
-        private string ToMysqlObject(object? input)
-        {
-            if (input == null)
-                return "NULL";
-            else if (input is string inputString)
-                return $"'{inputString}'";
-            else
-                return $"{input}";
-        }
-
-        private object Track(object obj)
+        private object Track(string table, object obj)
         {
             if (obj is IEnumerable enumerable)
             {
-                return TrackArray(enumerable.Cast<object>().ToArray());
+                return TrackArray(table, enumerable.Cast<object>().ToArray());
             }
-            return Track(obj, false);
+            return Track(table, obj, false);
         }
 
-        private T Track<T>(T obj, bool useGeneric = true) where T : class
+        private T Track<T>(string table, T obj, bool useGeneric = true) where T : class
         {
             var converter = useGeneric
                 ? ObjectConverter.GetTypeConverter<T>()
@@ -425,31 +435,59 @@
                 else
                     values[i] = currValue;
             }
-            _trackedObjects.Add(obj, values);
+
+            if (_trackedObjects.TryGetValue(table, out var dict))
+                dict.Add(obj, values);
+            else
+                _trackedObjects.Add(table, new Dictionary<object, object[]>());
             return obj;
         }
 
-        private T[] TrackArray<T>(T[] objs, bool useGeneric = true) where T : class
+        private T[] TrackArray<T>(string table, T[] objs, bool useGeneric = true) where T : class
         {
             foreach (var obj in objs)
             {
-                Track(obj, useGeneric);
+                Track(table, obj, useGeneric);
             }
             return objs;
         }
 
-        private object[] TrackArray(object[] objs)
+        private object[] TrackArray(string table, object[] objs)
         {
             foreach (var obj in objs)
             {
-                Track(obj, false);
+                Track(table, obj, false);
             }
             return objs;
         }
 
-        private void Untrack<T>(T obj) where T : class
+        private bool Untrack<T>(T obj) where T : class
         {
-            _trackedObjects.Remove(obj);
+            foreach (var dict in _trackedObjects)
+            {
+                if (dict.Value.Remove(obj))
+                    return true;
+            }
+
+            return false;
+        }
+
+        private bool UntrackId(long id)
+        {
+            foreach (var dict in _trackedObjects)
+            {
+                if (dict.Value.Count == 0 || dict.Value.First().Key is not IIDEntity entity)
+                    continue;
+                if (dict.Value.Any(x => x.Value.Any(x => x is long longValue && longValue == id)))
+                    return dict.Value.Remove(entity);
+            }
+
+            return false;
+        }
+
+        private void UntrackTable(string table)
+        {
+            _trackedObjects.Remove(table);
         }
 
         private string SerializeSqlTracked<T>(object[] trackedValues) where T : class
@@ -461,12 +499,7 @@
             {
                 var property = properties[i];
                 var value = trackedValues[i];
-                if (value == null || value == "NULL")
-                    values[i] += $"{property.Name}=NULL";
-                else if (property.PropertyType == typeof(string))
-                    values[i] += $"{property.Name}='{value}'";
-                else
-                    values[i] += $"{property.Name}={value}";
+                values[i] = $"{property.Name} = {ObjectConverter.FromType(value)}";
             }
             return $"{string.Join(" AND ", values)}";
         }

@@ -3,6 +3,7 @@
     using System;
     using System.Collections.Generic;
     using System.Data;
+    using System.Globalization;
 
     public static class ObjectConverter
     {
@@ -28,8 +29,62 @@
             return (Activator.CreateInstance(typeConverter) as IDBTypeConverter)!;
         }
 
+        public static T ToType<T>(string input) => (T)ToType(input, typeof(T));
+        public static object ToType(string input, Type t)
+        {
+            if (input == "NULL")
+                return null!;
+            if (t == typeof(string) && input.StartsWith("'") && input.EndsWith("'"))
+            {
+                if (t.IsEnum)
+                    return Enum.Parse(t, input.TrimStart('\'').TrimEnd('\''));
+                return input.TrimStart('\'').TrimEnd('\'') ??
+                       throw new ArgumentException("Data is not a valid string");
+            }
+            if (t == typeof(bool) && bool.TryParse(input, out var boolValue))
+                return boolValue;
+            if (t.IsEnum)
+            {
+                if (Enum.IsDefined(t, Convert.ChangeType(input, Enum.GetUnderlyingType(t)))) 
+                    return Enum.ToObject(t, Convert.ChangeType(input, Enum.GetUnderlyingType(t)));
+                return default;
+            }
+            if (t == typeof(DateTime))
+            {
+                if (string.Equals(input.Replace("'", ""), "0001-01-0100:00:00"))
+                    return default;
+                if (DateTime.TryParseExact(input.Replace("T", " ").Replace("\"", ""), "yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture, DateTimeStyles.AllowWhiteSpaces, out var dateValue)) 
+                    return dateValue;
+            }
+            if (t == typeof(TimeSpan) && TimeSpan.TryParse(input, out var timeValue))
+                return timeValue;
+            if (t == typeof(Guid) && Guid.TryParse(input, out var guidValue))
+                return guidValue;
+            return Convert.ChangeType(input, t);
+        }
+
+        public static string FromType(object? input)
+        {
+            if (input == null)
+                return "NULL";
+            var t = input.GetType();
+            if (t == typeof(string))
+                return $"'{input}'";
+            if (t == typeof(bool))
+                return ((bool)input).ToString();
+            if (t.IsEnum)
+                return Convert.ToUInt64(input).ToString();
+            if (t == typeof(DateTime))
+                return $"'{(DateTime)input:yyyy-MM-dd HH:mm:ss}'";
+            if (t == typeof(TimeSpan))
+                return $"'{(TimeSpan)input:hh\\:mm\\:ss}'";
+            if (t == typeof(Guid))
+                return $"'{(Guid)input:D}'";
+            return input.ToString();
+        }
+
         public static bool CanConvertToDbType(this Type type) =>
-            type.UnderlyingSystemType == type || type.UnderlyingSystemType == null;
+            Type.GetTypeCode(type) != TypeCode.Object;
 
         public static DbType ToDbType(this Type type, bool throwIfNotSystemType = true)
         {

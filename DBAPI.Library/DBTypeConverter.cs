@@ -4,6 +4,7 @@
     using System.Collections.Generic;
     using System.Linq;
     using System.Reflection;
+    using System.Text.RegularExpressions;
     using DBAPI.Library.Models;
 
     public class DBTypeConverter<T> : IDBTypeConverter where T : class
@@ -23,7 +24,8 @@
             var instance = Activator.CreateInstance<T>();
             foreach (var kvp in values)
             {
-                string[] split = kvp.Split(':');
+                Regex splitRegex = new Regex(@"(?<!\d):(?!\d)|:(?!\d)|(?<!\d):"); // only split if not between numbers
+                string[] split = splitRegex.Split(kvp);
                 string key = split[0].Replace("\"", "");
                 string value = split[1].Replace("\"", "");
                 if (value == "null")
@@ -37,9 +39,7 @@
                 object convertedValue = null;
                 try
                 {
-                    convertedValue = property.PropertyType.IsEnum
-                        ? Enum.Parse(property.PropertyType, value)
-                        : Convert.ChangeType(value, property.PropertyType);
+                    convertedValue = ObjectConverter.ToType(value, property.PropertyType);
                 }
                 catch (Exception e)
                 {
@@ -58,7 +58,7 @@
                 throw new ArgumentNullException(nameof(data));
             if (!data.StartsWith("[") || !data.EndsWith("]"))
                 throw new ArgumentException("Data is not a valid JSON array");
-            data = data.Substring(1, data.Length - 2);
+            data = data.TrimStart('[').TrimEnd(']');
             string[] values = data.Split(new []{"],["}, StringSplitOptions.RemoveEmptyEntries);
             List<T> instances = new List<T>();
             foreach (var stringArray in values)
@@ -72,9 +72,6 @@
         {
             if (data == null)
                 throw new ArgumentNullException(nameof(data));
-            if (!data.StartsWith("[") || !data.EndsWith("]"))
-                throw new ArgumentException("Data is not a valid JSON array with values");
-            data = data.Substring(1, data.Length - 2);
             string[] values = data.Split(new []{","}, StringSplitOptions.RemoveEmptyEntries);
             if (values.Length != _properties.Length)
                 throw new ArgumentException("Data does not match the number of properties");
@@ -88,9 +85,7 @@
                 object convertedValue = null;
                 try
                 {
-                    convertedValue = property.PropertyType.IsEnum
-                        ? Enum.Parse(property.PropertyType, value)
-                        : Convert.ChangeType(value, property.PropertyType);
+                    convertedValue = ObjectConverter.ToType(value, property.PropertyType);
                 }
                 catch (Exception e)
                 {
@@ -104,16 +99,15 @@
             return instance;
         }
 
-        public IEnumerable<T> DeserializeEnumerable(string data, bool throwOnConversionError = true) => DeserializeEnumerableInternal(data, throwOnConversionError, ',');
-        public IEnumerable<T> DeserializeEnumerableMessage(string data, bool throwOnConversionError = true) => DeserializeEnumerableInternal(data, throwOnConversionError, ';');
-        private IEnumerable<T> DeserializeEnumerableInternal(string data, bool throwOnConversionError, char seperator)
+        public IEnumerable<T> DeserializeEnumerable(string data, bool throwOnConversionError = true) => DeserializeEnumerableInternal(data, throwOnConversionError, new []{"},"});
+        public IEnumerable<T> DeserializeEnumerableMessage(string data, bool throwOnConversionError = true) => DeserializeEnumerableInternal(data, throwOnConversionError, new []{"};"});
+        private IEnumerable<T> DeserializeEnumerableInternal(string data, bool throwOnConversionError, string[] seperatorArray)
         {
             if (data == null)
                 throw new ArgumentNullException(nameof(data));
+            data = data.Replace(" ", "");
             if (!data.StartsWith("[") || !data.EndsWith("]"))
                 throw new ArgumentException("Data is not a valid JSON array");
-            data = data.Replace(" ", "").TrimStart('[').TrimEnd(']');
-            string[] seperatorArray = { "}"+seperator };
             string[] values = data.Substring(1, data.Length - 2).Split(seperatorArray, StringSplitOptions.RemoveEmptyEntries);
             List<T> instances = new List<T>();
             foreach (var jsonObject in values)
@@ -127,16 +121,17 @@
         {
             if (data == null)
                 throw new ArgumentNullException(nameof(data));
+            if (typeof(T).CanConvertToDbType())
+            {
+                return ObjectConverter.FromType(data);
+            }
             string[] values = new string[_properties.Length];
             for (int i = 0; i < _properties.Length; i++)
             {
                 var property = _properties[i];
                 var value = property.GetValue(data);
                 values[i] = property.Name + ":";
-                if (value == null)
-                    values[i] += "null";
-                else
-                    values[i] += value is string stringValue ? $"\"{stringValue}\"" : value.ToString();
+                values[i] += ObjectConverter.FromType(value);
             }
             return $"{{{string.Join(",", values)}}}";
         }
@@ -167,12 +162,7 @@
             {
                 var property = _properties[i];
                 var value = property.GetValue(data);
-                if (value == null)
-                    values[i] += "NULL";
-                else if (property.PropertyType == typeof(string))
-                    values[i] += $"'{value}'";
-                else
-                    values[i] += $"{value}";
+                values[i] += ObjectConverter.FromType(value);
             }
             return $"{string.Join(",", values)}";
         }
@@ -190,12 +180,7 @@
                 {
                     var property = _properties[i];
                     var value = property.GetValue(obj);
-                    if (value == null)
-                        values[i] += "NULL";
-                    else if (property.PropertyType == typeof(string))
-                        values[i] += $"'{value}'";
-                    else
-                        values[i] += $"{value}";
+                    values[i] += ObjectConverter.FromType(value);
                 }
             }
             return $"{string.Join(",", values)}";
@@ -212,12 +197,7 @@
             {
                 var property = _properties[i];
                 var value = property.GetValue(data);
-                if (value == null)
-                    values[i] += $"{property.Name}=NULL";
-                else if (property.PropertyType == typeof(string))
-                    values[i] += $"{property.Name}='{value}'";
-                else
-                    values[i] += $"{property.Name}={value}";
+                values[i] += $"{property.Name}={ObjectConverter.FromType(value)}";
             }
             return $"{string.Join(seperator, values)}";
         }
@@ -248,7 +228,7 @@
                 if (primaryKey && validProperty.Name == "ID")
                     MySqlTypesString += "PRIMARY KEY(ID),";
             }
-            MySqlTypesString = MySqlTypesString.TrimEnd(',');
+            MySqlTypesString = MySqlTypesString.Substring(0, MySqlTypesString.Length - 2);
         }
 
         public PropertyInfo[] TrackedProperties => _properties;
