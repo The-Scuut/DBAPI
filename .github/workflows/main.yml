@@ -45,13 +45,12 @@ jobs:
         shell: pwsh
         run: |
           dotnet publish --runtime linux-x64 --self-contained true --framework net6.0 --configuration Release -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true DBAPI/DBAPI.csproj
-          mkdir PublishCache
-          mv DBAPI/bin/Release/net6.0/linux-x64/publish/DBAPI PublishCache/DBAPI
       - name: Publish linux framework depdendant
         shell: pwsh
         run: |
-          dotnet publish --runtime linux-x64 --self-contained false --framework net6.0 --configuration Release -p:PublishSingleFile=true DBAPI/DBAPI.csproj
-          mv DBAPI/bin/Release/net6.0/linux-x64/publish/DBAPI PublishCache/DBAPI-framework
+          dotnet publish --runtime linux-x64 --self-contained false --framework net6.0 --configuration Release --output bin/Release/net6.0/linux-x64-framework/publish -p:PublishSingleFile=true DBAPI/DBAPI.csproj
+          cd DBAPI/bin/Release/net6.0/linux-x64/publish
+          mv DBAPI DBAPI-framework
       - name: Release
         uses: softprops/action-gh-release@v1
         with:
@@ -60,6 +59,6 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           files: |
             DBAPI/bin/Release/net6.0/win10-x64/publish/DBAPI.exe
-            PublishCache/DBAPI
-            PublishCache/DBAPI-framework
+            DBAPI/bin/Release/net6.0/linux-x64/publish/DBAPI
+            DBAPI/bin/Release/net6.0/linux-x64/publish/DBAPI-framework
             DBAPI.Library/bin/Release/netstandard2.1/DBAPI.Library.dll
