@@ -17,15 +17,20 @@ public static class DBSetup
             {
                 perms += reader.GetString(0);
             }
-            var missing = Constants.RequiredPermissions.Where(x => !perms.Contains(x)).ToArray();
-            if (missing.Any())
+            if (!perms.Contains("ALL PRIVILEGES"))
             {
-                ConsoleUtils.WriteLine("The user is missing the following permissions:", ConsoleColor.Red);
-                foreach (var perm in missing)
+
+                var missing = Constants.RequiredPermissions.Where(x => !perms.Contains(x)).ToArray();
+                if (missing.Any())
                 {
-                    ConsoleUtils.WriteLine(perm, ConsoleColor.Red);
+                    ConsoleUtils.WriteLine("The user is missing the following permissions:", ConsoleColor.Red);
+                    foreach (var perm in missing)
+                    {
+                        ConsoleUtils.WriteLine(perm, ConsoleColor.Red);
+                    }
+
+                    return false;
                 }
-                return false;
             }
             reader.Dispose();
             showGrantsCommand.Dispose();
