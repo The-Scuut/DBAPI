@@ -49,7 +49,7 @@ jobs:
         shell: pwsh
         run: |
           dotnet publish --runtime linux-x64 --self-contained false --framework net6.0 --configuration Release --output bin/Release/net6.0/linux-x64-framework/publish -p:PublishSingleFile=true DBAPI/DBAPI.csproj
-          cd DBAPI/bin/Release/net6.0/linux-x64/publish
+          cd bin/Release/net6.0/linux-x64/publish
           mv DBAPI DBAPI-framework
       - name: Release
         uses: softprops/action-gh-release@v1
